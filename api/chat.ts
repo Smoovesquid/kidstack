@@ -162,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err) {
     const isAnthropicOverload =
-      err instanceof Anthropic.APIStatusError && (err.status === 429 || err.status === 529)
+      err instanceof Error && 'status' in err && ((err as { status: number }).status === 429 || (err as { status: number }).status === 529)
 
     if (isAnthropicOverload) {
       sendSSE(res, {
