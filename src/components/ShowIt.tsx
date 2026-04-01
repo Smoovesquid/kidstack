@@ -110,7 +110,7 @@ export function ShowIt({ session, onUpdate, onStartOver }: Props) {
             srcDoc={html}
             sandbox="allow-scripts"
             title="Your finished app"
-            className="w-full h-64 border-0"
+            className="w-full min-h-[400px] border-0"
           />
         </div>
 
@@ -168,11 +168,8 @@ export function ShowIt({ session, onUpdate, onStartOver }: Props) {
       </div>
 
       {/* Start over */}
-      <div className="text-center">
-        <button
-          onClick={handleStartOver}
-          className="text-sm text-gray-400 hover:text-gray-600 underline"
-        >
+      <div className="flex justify-center">
+        <button onClick={handleStartOver} className="btn-secondary">
           Make another app! 🌟
         </button>
       </div>

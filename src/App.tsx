@@ -10,10 +10,18 @@ import { ShowIt } from './components/ShowIt'
 
 const STEP_ORDER: AppSession['step'][] = ['dream', 'build', 'check', 'show']
 
+const STEP_LABELS: Record<AppSession['step'], string> = {
+  dream: 'Dream It',
+  build: 'Build It',
+  check: 'Check It',
+  show: 'Show It',
+}
+
 export default function App() {
   const [session, setSession] = useState<AppSession | null>(null)
   const [showRestorePrompt, setShowRestorePrompt] = useState(false)
   const [savedSession, setSavedSession] = useState<AppSession | null>(null)
+  const [storageWarning, setStorageWarning] = useState(false)
 
   // Boot: warm the Vercel function + check for saved session
   useEffect(() => {
@@ -42,7 +50,7 @@ export default function App() {
     setSession((prev) => {
       if (!prev) return prev
       const next = { ...prev, ...updates }
-      saveSession(next)
+      if (!saveSession(next)) setStorageWarning(true)
       return next
     })
   }
@@ -53,7 +61,7 @@ export default function App() {
       const idx = STEP_ORDER.indexOf(prev.step)
       const nextStep = STEP_ORDER[Math.min(idx + 1, STEP_ORDER.length - 1)]
       const next = { ...prev, step: nextStep }
-      saveSession(next)
+      if (!saveSession(next)) setStorageWarning(true)
       return next
     })
   }
@@ -107,18 +115,37 @@ export default function App() {
   }
 
   const unlocked = getUnlockedSteps(session)
+  const stepNumber = STEP_ORDER.indexOf(session.step) + 1
 
   return (
     <div className="min-h-screen">
+      {/* Storage warning banner */}
+      {storageWarning && (
+        <div className="bg-orange-100 border-b-2 border-orange-300 px-4 py-2 flex items-center justify-between gap-3">
+          <p className="text-sm font-bold text-orange-800">
+            ⚠️ Oh no! Your Chromebook is running out of space to save your app. Try closing some tabs!
+          </p>
+          <button
+            onClick={() => setStorageWarning(false)}
+            className="text-orange-600 hover:text-orange-800 font-bold text-lg leading-none"
+            aria-label="Dismiss warning"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white/80 backdrop-blur sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 py-3">
+        <div className="max-w-4xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-3xl">🧱</span>
               <h1 className="text-2xl font-extrabold text-indigo-700">KidStack</h1>
             </div>
-            <p className="text-xs text-gray-400 hidden sm:block">Build your own app with AI!</p>
+            <p className="text-sm font-bold text-indigo-400">
+              Step {stepNumber} of 4 — {STEP_LABELS[session.step]}
+            </p>
           </div>
           <RoleNav
             current={session.step}
@@ -129,7 +156,7 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="max-w-4xl mx-auto px-4 py-6">
         {session.step === 'dream' && (
           <DreamIt session={session} onUpdate={updateSession} onNext={advanceStep} />
         )}

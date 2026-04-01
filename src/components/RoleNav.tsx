@@ -29,17 +29,15 @@ export function RoleNav({ current, unlocked, onNavigate }: Props) {
             onClick={() => isClickable && onNavigate(role.id)}
             disabled={!isUnlocked}
             className={[
-              'flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-sm sm:text-base transition-all duration-200',
+              'flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-3 rounded-2xl font-bold text-xs sm:text-base transition-all duration-200',
               isActive ? role.activeColor + ' shadow-md scale-105' : '',
               !isActive && isUnlocked ? role.color + ' hover:scale-105 hover:shadow-sm cursor-pointer' : '',
               !isUnlocked ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' : '',
             ].join(' ')}
             aria-current={isActive ? 'step' : undefined}
           >
-            <span className="text-xl">{role.emoji}</span>
-            <span className="hidden sm:inline">{role.label}</span>
-            {/* Step number on mobile */}
-            <span className="sm:hidden font-extrabold">{i + 1}</span>
+            <span className="text-lg sm:text-xl">{role.emoji}</span>
+            <span>{role.label}</span>
           </button>
         )
       })}

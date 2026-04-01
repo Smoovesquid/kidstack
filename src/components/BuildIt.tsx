@@ -11,6 +11,15 @@ interface Props {
 
 type BuildState = 'idle' | 'streaming' | 'moderating' | 'done' | 'blocked' | 'error'
 
+function getBuildProgress(chars: number): string {
+  if (chars < 100) return 'Thinking about your idea...'
+  if (chars < 400) return 'Writing the building blocks...'
+  if (chars < 800) return 'Adding colors and fun stuff...'
+  if (chars < 1500) return 'Making things clickable...'
+  if (chars < 2500) return 'Putting it all together...'
+  return 'Almost done! Adding the finishing touches...'
+}
+
 export function BuildIt({ session, onUpdate, onNext }: Props) {
   const [buildState, setBuildState] = useState<BuildState>(session.buildHtml ? 'done' : 'idle')
   const [streamText, setStreamText] = useState('')
@@ -53,7 +62,6 @@ export function BuildIt({ session, onUpdate, onNext }: Props) {
         },
       },
     )
-
   }
 
   function handleRebuild() {
@@ -93,11 +101,17 @@ export function BuildIt({ session, onUpdate, onNext }: Props) {
               <span className="text-2xl rocket-bounce inline-block">🚀</span>
               <span>Building your app… this takes about 30 seconds!</span>
             </div>
-            {streamText && (
-              <div className="bg-gray-900 text-green-400 rounded-2xl p-4 h-40 overflow-hidden text-xs font-mono opacity-70">
-                <pre className="streaming-text">{streamText.slice(-800)}</pre>
-              </div>
-            )}
+            {/* Magic progress visualization — no code shown to kids */}
+            <div
+              className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 text-center"
+              aria-live="polite"
+              aria-label="Building progress"
+            >
+              <div className="text-5xl mb-3 rocket-bounce inline-block">✨</div>
+              <p className="font-extrabold text-blue-700 text-lg">
+                {getBuildProgress(streamText.length)}
+              </p>
+            </div>
             <FactBubble visible={true} />
           </div>
         )}
@@ -123,7 +137,7 @@ export function BuildIt({ session, onUpdate, onNext }: Props) {
 
         {buildState === 'error' && (
           <div className="space-y-3">
-            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-red-700 text-sm">
+            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-red-700 text-sm font-bold">
               {error}
             </div>
             <button onClick={handleBuild} className="btn-primary">

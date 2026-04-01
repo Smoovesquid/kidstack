@@ -195,7 +195,7 @@ export function DreamIt({ session, onUpdate, onNext }: Props) {
               onUpdate({ dreamConversation: [], dreamPlan: null })
               setError(null)
             }}
-            className="text-sm text-gray-400 hover:text-gray-600 underline"
+            className="btn-secondary text-sm py-2 px-4"
           >
             Start over with a different idea
           </button>

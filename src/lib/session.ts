@@ -28,13 +28,13 @@ export function loadSession(): AppSession | null {
   }
 }
 
-export function saveSession(session: AppSession): void {
+/** Returns false if storage quota was exceeded (common on school Chromebooks). */
+export function saveSession(session: AppSession): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...session, savedAt: Date.now() }))
-  } catch (err) {
-    // localStorage quota exceeded — common on school Chromebooks
-    // Gracefully degrade: session still works in memory, just won't restore after reload
-    console.warn('[session] localStorage save failed (quota?), session will not persist:', err)
+    return true
+  } catch {
+    return false
   }
 }
 
