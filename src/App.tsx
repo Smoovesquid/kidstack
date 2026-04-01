@@ -25,6 +25,20 @@ export default function App() {
   const [savedSession, setSavedSession] = useState<AppSession | null>(null)
   const [storageWarning, setStorageWarning] = useState(false)
 
+  // Boot: warm the Vercel function + check for saved session (runs once key is present)
+  useEffect(() => {
+    if (!apiKey) return
+    warmPing()
+
+    const saved = loadSession()
+    if (saved && saved.dreamConversation.length > 0) {
+      setSavedSession(saved)
+      setShowRestorePrompt(true)
+    } else {
+      setSession(freshSession())
+    }
+  }, [apiKey])
+
   if (!apiKey) {
     return (
       <ApiKeySetup
@@ -35,19 +49,6 @@ export default function App() {
       />
     )
   }
-
-  // Boot: warm the Vercel function + check for saved session
-  useEffect(() => {
-    warmPing()
-
-    const saved = loadSession()
-    if (saved && saved.dreamConversation.length > 0) {
-      setSavedSession(saved)
-      setShowRestorePrompt(true)
-    } else {
-      setSession(freshSession())
-    }
-  }, [])
 
   function handleRestore() {
     setSession(savedSession)
