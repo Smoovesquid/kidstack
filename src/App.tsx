@@ -162,7 +162,11 @@ export default function App() {
                 Step {stepNumber} of 4 — {STEP_LABELS[session.step]}
               </p>
               <button
-                onClick={() => { setApiKey(null) }}
+                onClick={() => {
+                  if (window.confirm('Change your API key? Your current app will be saved so you can come back to it.')) {
+                    setApiKey(null)
+                  }
+                }}
                 className="text-xs text-gray-400 hover:text-gray-600 font-mono"
                 title="Change API key"
               >
