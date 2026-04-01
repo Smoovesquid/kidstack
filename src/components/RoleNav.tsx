@@ -18,7 +18,7 @@ interface Props {
 export function RoleNav({ current, unlocked, onNavigate }: Props) {
   return (
     <nav className="flex gap-2 sm:gap-3 justify-center flex-wrap">
-      {ROLES.map((role, i) => {
+      {ROLES.map((role) => {
         const isActive = role.id === current
         const isUnlocked = unlocked.has(role.id)
         const isClickable = isUnlocked && !isActive
