@@ -60,7 +60,13 @@ Rules:
 - Be enthusiastic!`,
 }
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+function getClient(req: VercelRequest): Anthropic {
+  const headerKey = Array.isArray(req.headers['x-api-key'])
+    ? req.headers['x-api-key'][0]
+    : req.headers['x-api-key']
+  const apiKey = headerKey ?? process.env.ANTHROPIC_API_KEY
+  return new Anthropic({ apiKey })
+}
 
 function sendSSE(res: VercelResponse, data: object) {
   res.write(`data: ${JSON.stringify(data)}\n\n`)
@@ -128,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let fullText = ''
 
   try {
-    const stream = client.messages.stream({
+    const stream = getClient(req).messages.stream({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: role === 'build' ? 4096 : 1024,
       system: systemPrompt,

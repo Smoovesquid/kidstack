@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { warmPing } from './lib/api'
+import { getStoredApiKey, setStoredApiKey, warmPing } from './lib/api'
+import { ApiKeySetup } from './components/ApiKeySetup'
 import { freshSession, loadSession, saveSession } from './lib/session'
 import type { AppSession } from './lib/session'
 import { RoleNav } from './components/RoleNav'
@@ -18,10 +19,22 @@ const STEP_LABELS: Record<AppSession['step'], string> = {
 }
 
 export default function App() {
+  const [apiKey, setApiKey] = useState<string | null>(() => getStoredApiKey())
   const [session, setSession] = useState<AppSession | null>(null)
   const [showRestorePrompt, setShowRestorePrompt] = useState(false)
   const [savedSession, setSavedSession] = useState<AppSession | null>(null)
   const [storageWarning, setStorageWarning] = useState(false)
+
+  if (!apiKey) {
+    return (
+      <ApiKeySetup
+        onSave={(key) => {
+          setStoredApiKey(key)
+          setApiKey(key)
+        }}
+      />
+    )
+  }
 
   // Boot: warm the Vercel function + check for saved session
   useEffect(() => {
@@ -143,9 +156,18 @@ export default function App() {
               <span className="text-3xl">🧱</span>
               <h1 className="text-2xl font-extrabold text-indigo-700">KidStack</h1>
             </div>
-            <p className="text-sm font-bold text-indigo-400">
-              Step {stepNumber} of 4 — {STEP_LABELS[session.step]}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-bold text-indigo-400">
+                Step {stepNumber} of 4 — {STEP_LABELS[session.step]}
+              </p>
+              <button
+                onClick={() => { setApiKey(null) }}
+                className="text-xs text-gray-400 hover:text-gray-600 font-mono"
+                title="Change API key"
+              >
+                🔑
+              </button>
+            </div>
           </div>
           <RoleNav
             current={session.step}

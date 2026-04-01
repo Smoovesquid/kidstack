@@ -1,5 +1,19 @@
 /** Client-side API helpers — SSE stream parser for /api/chat */
 
+const API_KEY_STORAGE = 'kidstack_api_key'
+
+export function getStoredApiKey(): string | null {
+  try { return localStorage.getItem(API_KEY_STORAGE) } catch { return null }
+}
+
+export function setStoredApiKey(key: string): void {
+  try { localStorage.setItem(API_KEY_STORAGE, key) } catch { /* ignore */ }
+}
+
+export function clearStoredApiKey(): void {
+  try { localStorage.removeItem(API_KEY_STORAGE) } catch { /* ignore */ }
+}
+
 type Role = 'dream' | 'build' | 'check' | 'show'
 
 export interface SSECallbacks {
@@ -18,9 +32,12 @@ export async function streamChat(
 ): Promise<void> {
   let response: Response
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const key = getStoredApiKey()
+    if (key) headers['x-api-key'] = key
     response = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ role, messages }),
       credentials: 'include',
     })
