@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/chat.ts": { "maxDuration": 60 },
+    "api/ping.ts": { "maxDuration": 10 }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
