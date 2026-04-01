@@ -3,6 +3,20 @@ import { streamChat } from '../lib/api'
 import type { AppSession } from '../lib/session'
 import { FactBubble } from './FactBubble'
 
+/** Render **bold** and *italic* markdown inline as React elements (no dangerouslySetInnerHTML). */
+function renderMarkdown(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={i}>{part.slice(1, -1)}</em>
+    }
+    return part
+  })
+}
+
 interface Props {
   session: AppSession
   onUpdate: (updates: Partial<AppSession>) => void
@@ -109,7 +123,7 @@ export function DreamIt({ session, onUpdate, onNext }: Props) {
                     : 'bg-gray-100 text-gray-800 rounded-bl-sm',
                 ].join(' ')}
               >
-                <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                <p className="whitespace-pre-wrap font-sans">{renderMarkdown(msg.content)}</p>
               </div>
             </div>
           ))}
@@ -118,7 +132,7 @@ export function DreamIt({ session, onUpdate, onNext }: Props) {
           {streamingText && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-4 py-3 bg-gray-100 text-gray-800">
-                <pre className="whitespace-pre-wrap font-sans streaming-text">{streamingText}</pre>
+                <p className="whitespace-pre-wrap font-sans streaming-text">{renderMarkdown(streamingText)}</p>
               </div>
             </div>
           )}
