@@ -4,6 +4,7 @@ import { COOKIE_MAX_AGE, COOKIE_NAME, createSessionToken, verifySessionToken } f
 
 /** Warm ping: primes the cold-start Lambda and issues a JWT session cookie if none exists. */
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  try {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' })
     return
@@ -28,5 +29,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     )
   }
 
-  res.status(200).json({ ok: true, warmed: true })
+    res.status(200).json({ ok: true, warmed: true })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message + '\n' + err.stack : String(err)
+    res.status(500).json({ debug_error: msg })
+  }
 }
