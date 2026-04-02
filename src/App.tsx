@@ -1,202 +1,123 @@
-import { useEffect, useState } from 'react'
-import { getStoredApiKey, setStoredApiKey, warmPing } from './lib/api'
-import { ApiKeySetup } from './components/ApiKeySetup'
-import { freshSession, loadSession, saveSession } from './lib/session'
-import type { AppSession } from './lib/session'
-import { RoleNav } from './components/RoleNav'
-import { DreamIt } from './components/DreamIt'
-import { BuildIt } from './components/BuildIt'
-import { CheckIt } from './components/CheckIt'
-import { ShowIt } from './components/ShowIt'
+import { useState } from 'react'
+import { getStoredApiKey, setStoredApiKey } from './lib/api'
+import { BYOKOnboarding } from './components/BYOKOnboarding'
+import { EntryScreen } from './components/EntryScreen'
+import { SkillPicker } from './components/SkillPicker'
+import type { SkillOption } from './components/SkillPicker'
+import { ChatScreen } from './components/ChatScreen'
+import type { ChatMessage } from './components/ChatScreen'
+import { AchievementScreen } from './components/AchievementScreen'
+import { BuildPreview } from './components/BuildPreview'
 
-const STEP_ORDER: AppSession['step'][] = ['dream', 'build', 'check', 'show']
-
-const STEP_LABELS: Record<AppSession['step'], string> = {
-  dream: 'Dream It',
-  build: 'Build It',
-  check: 'Check It',
-  show: 'Show It',
-}
+type Screen = 'entry' | 'onboarding' | 'skill-picker' | 'chat' | 'achievement' | 'build'
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string | null>(() => getStoredApiKey())
-  const [session, setSession] = useState<AppSession | null>(null)
-  const [showRestorePrompt, setShowRestorePrompt] = useState(false)
-  const [savedSession, setSavedSession] = useState<AppSession | null>(null)
-  const [storageWarning, setStorageWarning] = useState(false)
+  const [screen, setScreen] = useState<Screen>('entry')
+  const [selectedSkill, setSelectedSkill] = useState<SkillOption | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [skillOutput, setSkillOutput] = useState('')
+  const [totalCost, setTotalCost] = useState(0)
 
-  // Boot: warm the Vercel function + check for saved session (runs once key is present)
-  useEffect(() => {
-    if (!apiKey) return
-    warmPing()
+  // Derive app name from skill output (first NAME: line), fallback to skill label
+  const appName = (() => {
+    const match = skillOutput.match(/^NAME:\s*(.+)/im)
+    return match?.[1]?.trim() ?? selectedSkill?.label ?? 'My App'
+  })()
 
-    const saved = loadSession()
-    if (saved && saved.dreamConversation.length > 0) {
-      setSavedSession(saved)
-      setShowRestorePrompt(true)
-    } else {
-      setSession(freshSession())
-    }
-  }, [apiKey])
-
-  if (!apiKey) {
+  // --- BYOK onboarding ---
+  if (screen === 'onboarding' || (!apiKey && screen !== 'entry')) {
     return (
-      <ApiKeySetup
-        onSave={(key) => {
+      <BYOKOnboarding
+        onComplete={(key) => {
           setStoredApiKey(key)
           setApiKey(key)
+          setScreen('skill-picker')
         }}
       />
     )
   }
 
-  function handleRestore() {
-    setSession(savedSession)
-    setShowRestorePrompt(false)
-  }
-
-  function handleStartFresh() {
-    setSession(freshSession())
-    setShowRestorePrompt(false)
-  }
-
-  function updateSession(updates: Partial<AppSession>) {
-    setSession((prev) => {
-      if (!prev) return prev
-      const next = { ...prev, ...updates }
-      if (!saveSession(next)) setStorageWarning(true)
-      return next
-    })
-  }
-
-  function advanceStep() {
-    setSession((prev) => {
-      if (!prev) return prev
-      const idx = STEP_ORDER.indexOf(prev.step)
-      const nextStep = STEP_ORDER[Math.min(idx + 1, STEP_ORDER.length - 1)]
-      const next = { ...prev, step: nextStep }
-      if (!saveSession(next)) setStorageWarning(true)
-      return next
-    })
-  }
-
-  function handleStartOver() {
-    setSession(freshSession())
-  }
-
-  function getUnlockedSteps(s: AppSession): Set<AppSession['step']> {
-    const unlocked = new Set<AppSession['step']>(['dream'])
-    if (s.dreamPlan) unlocked.add('build')
-    if (s.buildHtml) unlocked.add('check')
-    if (s.checkFeedback) unlocked.add('show')
-    return unlocked
-  }
-
-  // Restore prompt
-  if (showRestorePrompt) {
+  // --- Entry ---
+  if (screen === 'entry') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="card max-w-sm w-full text-center space-y-4">
-          <p className="text-5xl">👋</p>
-          <h2 className="text-2xl font-extrabold text-indigo-700">Welcome back!</h2>
-          <p className="text-gray-600">
-            You were building something last time. Want to keep going?
-          </p>
-          {savedSession?.dreamPlan && (
-            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-3 text-sm text-left">
-              <pre className="whitespace-pre-wrap font-sans text-indigo-800">{savedSession.dreamPlan}</pre>
-            </div>
-          )}
-          <div className="flex gap-3 justify-center">
-            <button onClick={handleRestore} className="btn-primary">
-              Keep Going! 🚀
-            </button>
-            <button onClick={handleStartFresh} className="btn-secondary">
-              Start Fresh
-            </button>
-          </div>
-        </div>
-      </div>
+      <EntryScreen
+        onStart={() => {
+          if (!apiKey) {
+            setScreen('onboarding')
+          } else {
+            setScreen('skill-picker')
+          }
+        }}
+      />
     )
   }
 
-  if (!session) {
+  // --- Skill picker ---
+  if (screen === 'skill-picker') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-2xl animate-pulse">🚀 Loading KidStack…</p>
-      </div>
+      <SkillPicker
+        onSelect={(skill) => {
+          setSelectedSkill(skill)
+          setMessages([])
+          setSkillOutput('')
+          setScreen('chat')
+        }}
+        onBack={() => setScreen('entry')}
+      />
     )
   }
 
-  const unlocked = getUnlockedSteps(session)
-  const stepNumber = STEP_ORDER.indexOf(session.step) + 1
+  // --- Chat ---
+  if (screen === 'chat' && selectedSkill) {
+    return (
+      <ChatScreen
+        skill={selectedSkill.id}
+        skillLabel={selectedSkill.label}
+        skillEmoji={selectedSkill.emoji}
+        messages={messages}
+        totalCost={totalCost}
+        onAddMessages={(newMsgs) => {
+          setMessages((prev) => [...prev, ...newMsgs])
+        }}
+        onAddCost={(dollars) => {
+          setTotalCost((prev) => prev + dollars)
+        }}
+        onFinish={(output) => {
+          setSkillOutput(output)
+          setScreen('achievement')
+        }}
+        onBack={() => setScreen('skill-picker')}
+      />
+    )
+  }
 
-  return (
-    <div className="min-h-screen">
-      {/* Storage warning banner */}
-      {storageWarning && (
-        <div className="bg-orange-100 border-b-2 border-orange-300 px-4 py-2 flex items-center justify-between gap-3">
-          <p className="text-sm font-bold text-orange-800">
-            ⚠️ Oh no! Your Chromebook is running out of space to save your app. Try closing some tabs!
-          </p>
-          <button
-            onClick={() => setStorageWarning(false)}
-            className="text-orange-600 hover:text-orange-800 font-bold text-lg leading-none"
-            aria-label="Dismiss warning"
-          >
-            ×
-          </button>
-        </div>
-      )}
+  // --- Achievement ---
+  if (screen === 'achievement' && selectedSkill) {
+    return (
+      <AchievementScreen
+        skillLabel={selectedSkill.label}
+        skillEmoji={selectedSkill.emoji}
+        output={skillOutput}
+        totalCost={totalCost}
+        onBuildIt={() => setScreen('build')}
+        onNewSkill={() => setScreen('skill-picker')}
+      />
+    )
+  }
 
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur sticky top-0 z-10 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-3xl">🧱</span>
-              <h1 className="text-2xl font-extrabold text-indigo-700">KidStack</h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-bold text-indigo-400">
-                Step {stepNumber} of 4 — {STEP_LABELS[session.step]}
-              </p>
-              <button
-                onClick={() => {
-                  if (window.confirm('Change your API key? Your current app will be saved so you can come back to it.')) {
-                    setApiKey(null)
-                  }
-                }}
-                className="text-xs text-gray-400 hover:text-gray-600 font-mono"
-                title="Change API key"
-              >
-                🔑
-              </button>
-            </div>
-          </div>
-          <RoleNav
-            current={session.step}
-            unlocked={unlocked}
-            onNavigate={(step) => updateSession({ step })}
-          />
-        </div>
-      </header>
+  // --- Build preview ---
+  if (screen === 'build') {
+    return (
+      <BuildPreview
+        skillOutput={skillOutput}
+        appName={appName}
+        totalCost={totalCost}
+        onBack={() => setScreen('skill-picker')}
+      />
+    )
+  }
 
-      {/* Main content */}
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        {session.step === 'dream' && (
-          <DreamIt session={session} onUpdate={updateSession} onNext={advanceStep} />
-        )}
-        {session.step === 'build' && (
-          <BuildIt session={session} onUpdate={updateSession} onNext={advanceStep} />
-        )}
-        {session.step === 'check' && (
-          <CheckIt session={session} onUpdate={updateSession} onNext={advanceStep} />
-        )}
-        {session.step === 'show' && (
-          <ShowIt session={session} onUpdate={updateSession} onStartOver={handleStartOver} />
-        )}
-      </main>
-    </div>
-  )
+  // Fallback
+  return null
 }

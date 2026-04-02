@@ -5,6 +5,9 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { checkRateLimit } from './api/lib/rate-limit'
+import { validateApiKey } from './api/lib/validate-key'
+import { getAllowedOrigin, CORS_VARY_HEADERS } from './api/lib/cors'
 
 const PORT = 3002
 
@@ -64,18 +67,27 @@ function stripMarkdownFences(text: string): string {
   return trimmed
 }
 
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') ?? undefined
+  const allowed = getAllowedOrigin(origin)
+  if (!allowed) return { ...CORS_VARY_HEADERS }
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    ...CORS_VARY_HEADERS,
+    'Access-Control-Allow-Credentials': 'true',
+  }
+}
+
+function sseError(controller: ReadableStreamDefaultController, code: string, message: string) {
+  const text = `event: error\ndata: ${JSON.stringify({ code, message })}\n\n`
+  controller.enqueue(new TextEncoder().encode(text))
+}
+
 const server = Bun.serve({
   port: PORT,
   async fetch(req) {
     const url = new URL(req.url)
-
-    // CORS for localhost:5173
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': 'http://localhost:5173',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
-      'Access-Control-Allow-Credentials': 'true',
-    }
+    const corsHeaders = getCorsHeaders(req)
 
     if (req.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders })
@@ -88,11 +100,32 @@ const server = Bun.serve({
     }
 
     if (url.pathname === '/api/chat' && req.method === 'POST') {
+      const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1'
+      const { allowed, retryAfter } = checkRateLimit(ip)
+      if (!allowed) {
+        const stream = new ReadableStream({
+          start(controller) {
+            sseError(controller, 'RATE_LIMITED', `Too many requests. Try again in ${retryAfter} seconds.`)
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        })
+      }
+
       const apiKey = req.headers.get('x-api-key') ?? process.env.ANTHROPIC_API_KEY ?? ''
-      if (!apiKey) {
-        return new Response(JSON.stringify({ error: 'No API key' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (!apiKey || !validateApiKey(apiKey)) {
+        const stream = new ReadableStream({
+          start(controller) {
+            sseError(controller, 'INVALID_KEY', 'Invalid API key format. Keys start with sk-ant- and are at least 40 characters.')
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
         })
       }
 
@@ -114,7 +147,7 @@ const server = Bun.serve({
         })
       }
 
-      const client = new Anthropic({ apiKey })
+      const client = new Anthropic({ apiKey, timeout: 55_000 })
 
       const stream = new ReadableStream({
         async start(controller) {
@@ -146,8 +179,20 @@ const server = Bun.serve({
               encode({ type: 'done', remaining: 18 })
             }
           } catch (err) {
-            console.error('[chat] error:', err)
-            encode({ type: 'error', message: "Something went wrong. Let's try that again! 🔄" })
+            const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 0
+            if (err instanceof Anthropic.APIConnectionTimeoutError) {
+              sseError(controller, 'TIMEOUT', 'Request timed out. Try a shorter message.')
+            } else if (status === 401) {
+              sseError(controller, 'AUTH_FAILED', 'API key rejected by Anthropic. Check your key at console.anthropic.com')
+            } else if (status === 429 || status === 529) {
+              sseError(controller, 'API_ERROR', 'Anthropic API error: service overloaded, try again in a moment.')
+            } else if (status >= 400) {
+              const message = err instanceof Error ? err.message : 'unknown error'
+              sseError(controller, 'API_ERROR', `Anthropic API error: ${message}`)
+            } else {
+              console.error('[chat] error:', err)
+              sseError(controller, 'UNKNOWN', 'Something went wrong. Try again.')
+            }
           }
 
           controller.close()
@@ -163,6 +208,178 @@ const server = Bun.serve({
           'Set-Cookie': 'ks_session=dev; Path=/; SameSite=Strict; Max-Age=86400',
         },
       })
+    }
+
+    // --- /api/skill route (extracted gstack skill execution) ---
+    if (url.pathname === '/api/skill' && req.method === 'POST') {
+      const { OFFICE_HOURS_SYSTEM, OFFICE_HOURS_PHASES } = await import('./api/prompts/office-hours')
+      const { OFFICE_HOURS_KID_SYSTEM, OFFICE_HOURS_KID_PHASES } = await import('./api/prompts/office-hours-kid')
+      const { PLAN_CEO_REVIEW_SYSTEM, PLAN_CEO_REVIEW_PHASES } = await import('./api/prompts/plan-ceo-review')
+      const { PLAN_CEO_REVIEW_KID_SYSTEM, PLAN_CEO_REVIEW_KID_PHASES } = await import('./api/prompts/plan-ceo-review-kid')
+      const { PLAN_ENG_REVIEW_SYSTEM, PLAN_ENG_REVIEW_PHASES } = await import('./api/prompts/plan-eng-review')
+      const { PLAN_ENG_REVIEW_KID_SYSTEM, PLAN_ENG_REVIEW_KID_PHASES } = await import('./api/prompts/plan-eng-review-kid')
+      const { PLAN_DESIGN_REVIEW_SYSTEM, PLAN_DESIGN_REVIEW_PHASES } = await import('./api/prompts/plan-design-review')
+      const { PLAN_DESIGN_REVIEW_KID_SYSTEM, PLAN_DESIGN_REVIEW_KID_PHASES } = await import('./api/prompts/plan-design-review-kid')
+      const { DESIGN_CONSULTATION_SYSTEM, DESIGN_CONSULTATION_PHASES } = await import('./api/prompts/design-consultation')
+      const { DESIGN_CONSULTATION_KID_SYSTEM, DESIGN_CONSULTATION_KID_PHASES } = await import('./api/prompts/design-consultation-kid')
+      const { DESIGN_SHOTGUN_SYSTEM, DESIGN_SHOTGUN_PHASES } = await import('./api/prompts/design-shotgun')
+      const { DESIGN_SHOTGUN_KID_SYSTEM, DESIGN_SHOTGUN_KID_PHASES } = await import('./api/prompts/design-shotgun-kid')
+
+      const SKILLS: Record<string, { system: string; phases: readonly any[]; model: string; maxTokens: number }> = {
+        'office-hours': { system: OFFICE_HOURS_SYSTEM, phases: OFFICE_HOURS_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'office-hours-kid': { system: OFFICE_HOURS_KID_SYSTEM, phases: OFFICE_HOURS_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-ceo-review': { system: PLAN_CEO_REVIEW_SYSTEM, phases: PLAN_CEO_REVIEW_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-ceo-review-kid': { system: PLAN_CEO_REVIEW_KID_SYSTEM, phases: PLAN_CEO_REVIEW_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-eng-review': { system: PLAN_ENG_REVIEW_SYSTEM, phases: PLAN_ENG_REVIEW_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-eng-review-kid': { system: PLAN_ENG_REVIEW_KID_SYSTEM, phases: PLAN_ENG_REVIEW_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-design-review': { system: PLAN_DESIGN_REVIEW_SYSTEM, phases: PLAN_DESIGN_REVIEW_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'plan-design-review-kid': { system: PLAN_DESIGN_REVIEW_KID_SYSTEM, phases: PLAN_DESIGN_REVIEW_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'design-consultation': { system: DESIGN_CONSULTATION_SYSTEM, phases: DESIGN_CONSULTATION_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'design-consultation-kid': { system: DESIGN_CONSULTATION_KID_SYSTEM, phases: DESIGN_CONSULTATION_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'design-shotgun': { system: DESIGN_SHOTGUN_SYSTEM, phases: DESIGN_SHOTGUN_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+        'design-shotgun-kid': { system: DESIGN_SHOTGUN_KID_SYSTEM, phases: DESIGN_SHOTGUN_KID_PHASES, model: 'claude-haiku-4-5-20251001', maxTokens: 2048 },
+      }
+
+      const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1'
+      const { allowed, retryAfter } = checkRateLimit(ip)
+      if (!allowed) {
+        const stream = new ReadableStream({
+          start(controller) {
+            sseError(controller, 'RATE_LIMITED', `Too many requests. Try again in ${retryAfter} seconds.`)
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        })
+      }
+
+      const apiKey = req.headers.get('x-api-key') ?? process.env.ANTHROPIC_API_KEY ?? ''
+      if (!apiKey || !validateApiKey(apiKey)) {
+        const stream = new ReadableStream({
+          start(controller) {
+            sseError(controller, 'INVALID_KEY', 'Invalid API key format. Keys start with sk-ant- and are at least 40 characters.')
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        })
+      }
+
+      const body = await req.json() as { skill: string; messages: Array<{ role: string; content: string }> }
+      const skillConfig = SKILLS[body.skill]
+      if (!skillConfig) {
+        return new Response(JSON.stringify({ error: `Unknown skill: ${body.skill}` }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const client = new Anthropic({ apiKey, timeout: 55_000 })
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encode = (data: object) => {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`))
+          }
+
+          encode({ type: 'skill_meta', skill: body.skill, phases: skillConfig.phases })
+
+          try {
+            const anthropicStream = client.messages.stream({
+              model: skillConfig.model,
+              max_tokens: skillConfig.maxTokens,
+              system: skillConfig.system,
+              messages: body.messages as Array<{ role: 'user' | 'assistant'; content: string }>,
+            })
+
+            for await (const event of anthropicStream) {
+              if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+                encode({ type: 'text', content: event.delta.text })
+              }
+            }
+
+            const finalMessage = await anthropicStream.finalMessage()
+            encode({ type: 'tokens', input: finalMessage.usage.input_tokens, output: finalMessage.usage.output_tokens, model: skillConfig.model })
+            encode({ type: 'done' })
+          } catch (err) {
+            const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 0
+            if (err instanceof Anthropic.APIConnectionTimeoutError) {
+              sseError(controller, 'TIMEOUT', 'Request timed out. Try a shorter message.')
+            } else if (status === 401) {
+              sseError(controller, 'AUTH_FAILED', 'API key rejected by Anthropic. Check your key at console.anthropic.com')
+            } else if (status === 429 || status === 529) {
+              sseError(controller, 'API_ERROR', 'Anthropic API error: service overloaded, try again in a moment.')
+            } else if (status >= 400) {
+              const message = err instanceof Error ? err.message : 'unknown error'
+              sseError(controller, 'API_ERROR', `Anthropic API error: ${message}`)
+            } else {
+              console.error('[skill] error:', err)
+              sseError(controller, 'UNKNOWN', 'Something went wrong. Try again.')
+            }
+          }
+
+          controller.close()
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    }
+
+    // --- /api/test-key route (BYOK key validation) ---
+    if (url.pathname === '/api/test-key' && req.method === 'POST') {
+      const apiKey = req.headers.get('x-api-key') ?? ''
+      if (!apiKey || !validateApiKey(apiKey)) {
+        return new Response(JSON.stringify({ success: false, error: 'invalid_key' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      try {
+        const client = new Anthropic({ apiKey, timeout: 10_000 })
+        await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'Hi' }],
+        })
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      } catch (err) {
+        const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 0
+        if (status === 401) {
+          return new Response(JSON.stringify({ success: false, error: 'invalid_key' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        } else if (status === 429 || status === 529) {
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        } else if (status >= 400) {
+          const message = err instanceof Error ? err.message : ''
+          const error = (message.toLowerCase().includes('credit') || message.toLowerCase().includes('billing'))
+            ? 'no_credits'
+            : 'invalid_key'
+          return new Response(JSON.stringify({ success: false, error }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        } else {
+          return new Response(JSON.stringify({ success: false, error: 'network_error' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
     }
 
     return new Response('Not found', { status: 404, headers: corsHeaders })

@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/chat.ts": { "maxDuration": 60 },
-    "api/ping.ts": { "maxDuration": 10 }
+    "api/ping.ts": { "maxDuration": 10 },
+    "api/skill.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },

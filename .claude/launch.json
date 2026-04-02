@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kidstack",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "kidstack-api",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["api-dev-server.ts"],
+      "port": 3002
+    }
+  ]
+}
