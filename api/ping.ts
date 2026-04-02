@@ -1,21 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import cookie from 'cookie'
-import { COOKIE_MAX_AGE, COOKIE_NAME, createSessionToken, verifySessionToken } from './utils/jwt'
+import { greet } from './utils2/hello'
 
-/** Warm ping — testing utils/ import (no underscore prefix) */
-export default function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return }
-
-  const cookies = cookie.parse(req.headers.cookie ?? '')
-  const valid = cookies[COOKIE_NAME] ? verifySessionToken(cookies[COOKIE_NAME]) : null
-
-  if (!valid) {
-    const token = createSessionToken()
-    res.setHeader('Set-Cookie', cookie.serialize(COOKIE_NAME, token, {
-      httpOnly: true, secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict', maxAge: COOKIE_MAX_AGE, path: '/',
-    }))
-  }
-
-  res.status(200).json({ ok: true, warmed: true, debug: 'utils-import' })
+/** DEBUG: minimal subdirectory import */
+export default function handler(_req: VercelRequest, res: VercelResponse) {
+  res.status(200).json({ ok: true, msg: greet(), debug: 'subdir-import' })
 }
