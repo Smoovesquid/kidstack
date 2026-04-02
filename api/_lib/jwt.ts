@@ -26,8 +26,8 @@ function verifyHS256(token: string, secret: string): SessionPayload | null {
     if (parts.length !== 3) return null
     const [header, body, sig] = parts
     const expectedSig = createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url')
-    const sigBuf = Buffer.from(sig, 'base64url')
-    const expBuf = Buffer.from(expectedSig, 'base64url')
+    const sigBuf = new Uint8Array(Buffer.from(sig, 'base64url'))
+    const expBuf = new Uint8Array(Buffer.from(expectedSig, 'base64url'))
     if (sigBuf.length !== expBuf.length) return null
     if (!timingSafeEqual(sigBuf, expBuf)) return null
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as SessionPayload
